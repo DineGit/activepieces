@@ -14,7 +14,7 @@ import { telemetry } from '../../helper/telemetry.utils'
 import { projectService } from '../../project/project-service'
 import { userService } from '../../user/user-service'
 import { logger } from 'server-shared'
-import { plansService } from '../billing/project-plan/project-plan.service'
+import { projectLimitsService } from '../project-plan/project-plan.service'
 
 const referralRepo = databaseConnection.getRepository(ReferralEntity)
 
@@ -22,10 +22,7 @@ export const referralService = {
     async upsert({
         referredUserId,
         referringUserId,
-    }: {
-        referringUserId: string
-        referredUserId: string
-    }) {
+    }: UpsertParams): Promise<void> {
         const referingUser = await userService.getMetaInfo({ id: referringUserId })
         if (!referingUser) {
             logger.warn(`Referring user ${referringUserId} not found, ignoring.`)
@@ -76,7 +73,7 @@ export const referralService = {
     },
 }
 
-async function addExtraTasks(userId: string) {
+async function addExtraTasks(userId: string): Promise<void> {
     const referralsCount = await referralRepo.countBy({
         referringUserId: userId,
     })
@@ -84,16 +81,16 @@ async function addExtraTasks(userId: string) {
         return
     }
     const ownerProject = await projectService.getUserProjectOrThrow(userId)
-    const projectPlan = await plansService.getOrCreateDefaultPlan({
-        projectId: ownerProject.id,
-    })
-    const newTasks = projectPlan!.tasks + 500
-
-    await plansService.removeDailyTasksAndUpdateTasks({
-        projectId: ownerProject.id,
+    const projectPlan = await projectLimitsService.getPlanByProjectIdOrFail(ownerProject.id)
+    const newTasks = projectPlan.tasks + 500
+    await projectLimitsService.upsert({
         tasks: newTasks,
-    })
-    logger.info(
-        `Referral from ${userId}  created and plan for project ${ownerProject.id} updated to add ${newTasks} tasks.`,
-    )
+    }, ownerProject.id)
+    logger.info(`Referral from ${userId}  created and plan for project ${ownerProject.id} updated to add ${newTasks} tasks.`)
+}
+
+
+type UpsertParams = {
+    referringUserId: string
+    referredUserId: string
 }

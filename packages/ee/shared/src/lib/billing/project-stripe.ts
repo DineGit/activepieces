@@ -8,7 +8,7 @@ export const ProjectBilling = Type.Object({
     includedUsers: Type.Number(),
     stripeCustomerId: Type.String(),
     stripeSubscriptionId: Type.String(),
-    subscriptionStartDatetime: Type.String(),
+    subscriptionStatus: Type.String(),
 })
 
 export type ProjectBilling = Static<typeof ProjectBilling>

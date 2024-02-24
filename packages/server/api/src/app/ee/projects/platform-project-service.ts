@@ -6,21 +6,22 @@ import {
     SeekPage,
     assertNotNullOrUndefined,
     spreadIfDefined,
+    ProjectWithLimits,
 } from '@activepieces/shared'
 import { Equal, In, IsNull } from 'typeorm'
 import {
     PlatformId,
     ProjectMemberStatus,
-    ProjectWithUsageAndPlanResponse,
     UpdateProjectPlatformRequest,
 } from '@activepieces/ee-shared'
 import { ProjectMemberEntity } from '../project-members/project-member.entity'
 import { ProjectEntity } from '../../project/project-entity'
 import { databaseConnection } from '../../database/database-connection'
-import { plansService } from '../billing/project-plan/project-plan.service'
-import { projectUsageService } from '../billing/project-usage/project-usage-service'
 import { userService } from '../../user/user-service'
 import { paginationHelper } from '../../helper/pagination/pagination-utils'
+import { projectLimitsService } from '../project-plan/project-plan.service'
+import { projectUsageService } from '../../project/usage/project-usage-service'
+import { DEFAULT_FREE_PLAN_LIMIT } from '../project-plan'
 
 const projectRepo = databaseConnection.getRepository(ProjectEntity)
 const projectMemberRepo = databaseConnection.getRepository(ProjectMemberEntity)
@@ -34,7 +35,7 @@ export const platformProjectService = {
         ownerId: UserId | undefined
         platformId?: PlatformId
         externalId?: string
-    }): Promise<SeekPage<ProjectWithUsageAndPlanResponse>> {
+    }): Promise<SeekPage<ProjectWithLimits>> {
         const filters = await createFilters(ownerId, platformId, externalId)
         const projectPlans = await projectRepo
             .createQueryBuilder('project')
@@ -48,36 +49,32 @@ export const platformProjectService = {
             // TODO add pagination
             .limit(50)
             .getMany()
-        const projects: ProjectWithUsageAndPlanResponse[] = await Promise.all(
+        const projects: ProjectWithLimits[] = await Promise.all(
             projectPlans.map(enrichWithUsageAndPlan),
         )
-        return paginationHelper.createPage<ProjectWithUsageAndPlanResponse>(
+        return paginationHelper.createPage<ProjectWithLimits>(
             projects,
             null,
         )
     },
 
-    async update({ projectId, request }: UpdateParams): Promise<ProjectWithUsageAndPlanResponse> {
+    async update({ projectId, request }: UpdateParams): Promise<ProjectWithLimits> {
         await projectRepo.update(projectId, {
             displayName: request.displayName,
             notifyStatus: request.notifyStatus,
         })
         // TODO check for permission for teamMembers and tasks
         if (!isNil(request.plan)) {
-            await plansService.update({
-                projectId,
-                planLimits: {
-                    ...spreadIfDefined('teamMembers', request.plan.teamMembers),
-                    tasks: request.plan.tasks,
-                },
-                subscription: null,
-            })
+            await projectLimitsService.upsert({
+                ...spreadIfDefined('teamMembers', request.plan.teamMembers),
+                tasks: request.plan.tasks,
+            }, projectId)
         }
         return this.getWithPlanAndUsageOrThrow(projectId)
     },
     async getWithPlanAndUsageOrThrow(
         projectId: string,
-    ): Promise<ProjectWithUsageAndPlanResponse> {
+    ): Promise<ProjectWithLimits> {
         return enrichWithUsageAndPlan(
             await projectRepo.findOneByOrFail({
                 id: projectId,
@@ -122,22 +119,12 @@ async function getIdsOfProjects(ownerId: UserId): Promise<string[]> {
 
 async function enrichWithUsageAndPlan(
     project: Project,
-): Promise<ProjectWithUsageAndPlanResponse> {
-    const clonedProject: ProjectWithUsageAndPlanResponse = JSON.parse(
-        JSON.stringify(project),
-    )
-
-    if (isNil(clonedProject.plan)) {
-        clonedProject.plan = await plansService.getOrCreateDefaultPlan({
-            projectId: project.id,
-        })
+): Promise<ProjectWithLimits> {
+    return {
+        ...project,
+        plan: await projectLimitsService.getOrCreateDefaultPlan(project.id, DEFAULT_FREE_PLAN_LIMIT),
+        usage: await projectUsageService.get30DaysUsage(project.id),
     }
-
-    clonedProject.usage = await projectUsageService.getUsageByProjectId(
-        project.id,
-    )
-
-    return clonedProject
 }
 
 

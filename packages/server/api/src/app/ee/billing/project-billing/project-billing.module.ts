@@ -1,5 +1,5 @@
 import { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox'
-import { stripeHelper, stripeWebhookSecret } from '../../billing/billing/stripe-helper'
+import { stripeHelper, stripeWebhookSecret } from './stripe-helper'
 import { ALL_PRINICPAL_TYPES, PrincipalType, assertNotNullOrUndefined } from '@activepieces/shared'
 import { projectBillingService } from './project-billing.service'
 import { FastifyRequest } from 'fastify'

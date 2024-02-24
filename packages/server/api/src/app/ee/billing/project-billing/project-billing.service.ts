@@ -3,7 +3,7 @@ import { ProjectBillingEntity } from './project-billing.entity'
 import { databaseConnection } from '../../../database/database-connection'
 import { User, apId, isNil } from '@activepieces/shared'
 import { acquireLock } from '../../../helper/lock'
-import { stripeHelper } from '../../billing/billing/stripe-helper'
+import { stripeHelper } from './stripe-helper'
 import { projectService } from '../../../project/project-service'
 import { userService } from '../../../user/user-service'
 import { logger } from 'server-shared'
@@ -42,7 +42,8 @@ export const projectBillingService = {
             return
         }
         await projectBillingRepo.update(projectBilling.id, {
-            stripeSubscriptionId: subscription.status === 'active' ? subscription.id : undefined,
+            stripeSubscriptionId: subscription.id,
+            subscriptionStatus: subscription.status,
         })
     },
 }
